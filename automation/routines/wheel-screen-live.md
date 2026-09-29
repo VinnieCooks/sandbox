@@ -17,6 +17,9 @@ connectors such as IBKR. A Cloud Routine can.
 Data source: a single IBKR `get_price_snapshot` call per ticker returns every input the
 screener needs (`misc_statistics` carries the 52-week high, low and year-ago open).
 
+Routines created from a Claude Code session carry no connectors; add Interactive
+Brokers on the routine's edit page at claude.ai/code/routines.
+
 ## Prompt
 
 Paste everything below the line into the routine's instructions.
@@ -35,15 +38,18 @@ Hard rules:
   ticker out of the ranking, and name the missing field.
 
 Steps:
-1. Find `wheel_screener.py` at the repository root. If it is not in your working directory,
+1. If this session has no Interactive Brokers tools, reply with exactly one line,
+   "wheel-screen-live: no IBKR connector - add Interactive Brokers to this routine at
+   claude.ai/code/routines", and stop.
+2. Find `wheel_screener.py` at the repository root. If it is not in your working directory,
    run `git clone --depth 1 https://github.com/VinnieCooks/sandbox` and work in that folder.
-2. Universe: the tickers in `CANDIDATES` in `wheel_screener.py`.
-3. For each ticker: call `search_contracts` with the ticker and take the row whose symbol
+3. Universe: the tickers in `CANDIDATES` in `wheel_screener.py`.
+4. For each ticker: call `search_contracts` with the ticker and take the row whose symbol
    matches exactly and is the US primary listing. Then make one `get_price_snapshot` call
    with market_data_names: last, misc_statistics, implied_vol_underlying,
    implied_volatility_percentile, historical_vol, underlying_avg_option_volume, top_status.
    Response keys use hyphens, e.g. `implied-vol-underlying`.
-4. Map the response to the `Candidate` fields and save the list to `/tmp/snapshot.json`:
+5. Map the response to the `Candidate` fields and save the list to `/tmp/snapshot.json`:
    - price: last
    - low_52w, high_52w: the 52-week low and high in misc-statistics; open_52w: its price
      52 weeks ago
@@ -52,15 +58,15 @@ Steps:
      script documents this field as a percentile)
    - hist_vol_annual: historical-vol
    - avg_option_vol: underlying-avg-option-volume (calls plus puts, as an integer)
-5. Score with the repository's own code, not a re-implementation: build
+6. Score with the repository's own code, not a re-implementation: build
    `Candidate(**row)` for each row, call `score_candidate(c, dte=30)`, and rank by
    `composite_score`. Its premium is a Black-Scholes estimate from implied volatility,
    not a market quote.
-6. Reality check for the #1 pick only: with `get_option_parameters`, choose the regular
+7. Reality check for the #1 pick only: with `get_option_parameters`, choose the regular
    monthly expiration 25 to 45 days out; with `get_option_data` (strikes bounded around
    the recommended strike), find the put at that strike; read its bid/ask with
    `get_price_snapshot`. If any step fails, write "quote unavailable" and continue.
-7. Final message, at most 12 plain-text lines for a phone notification:
+8. Final message, at most 12 plain-text lines for a phone notification:
    - the data time and whether data was REALTIME or DELAYED (top-status)
    - the top 3 as `TICKER $price | put $strike | est $premium | yield/mo | IV pct | trend vs 52w ago | score`
    - the #1 pick's real bid/ask next to the estimate

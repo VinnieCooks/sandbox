@@ -23,7 +23,11 @@ it cannot load claude.ai connectors.
    means the session started and exited cleanly; it does not mean the task succeeded.
 
 From a Claude Code CLI session you can do the same with `/schedule`. API triggers (for
-`deep-dive`) can only be added on the web.
+`deep-dive`) can only be added on the web. A routine that Claude creates for you from a
+cloud session starts with **no connectors**: open it at claude.ai/code/routines, choose
+**Edit**, and add the connector yourself.
+
+Created so far: `wheel-screen-live` (trigger `trig_01LD4syDD9vbvWHJ3YA5rRjJ`).
 
 ## Limits to plan around
 
