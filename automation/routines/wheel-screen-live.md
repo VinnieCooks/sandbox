@@ -14,6 +14,9 @@ connectors such as IBKR. A Cloud Routine can.
 | Notifications | Push to the Claude app (and email, optionally) |
 | Daily cap cost | 1 run per weekday (caps: Pro 5, Max 15, Team/Enterprise 25 runs/day) |
 
+Data source: a single IBKR `get_price_snapshot` call per ticker returns every input the
+screener needs (`misc_statistics` carries the 52-week high, low and year-ago open).
+
 ## Prompt
 
 Paste everything below the line into the routine's instructions.
@@ -21,25 +24,44 @@ Paste everything below the line into the routine's instructions.
 ---
 
 You are running unattended as a scheduled routine; nobody can answer questions.
-Goal: today's wheel-strategy cash-secured-put shortlist from LIVE data, scored with the
-existing logic in `wheel_screener.py` at the repository root.
+Goal: today's wheel-strategy cash-secured-put shortlist from LIVE IBKR data, scored with the
+existing logic in `wheel_screener.py`.
 
 Hard rules:
-- Read-only. Never create, modify or cancel orders, order instructions, alerts or
-  watchlists. Call only IBKR tools that read data.
-- Never invent a number. If the connector cannot provide a field, write "n/a", leave that
-  ticker out of the ranking, and say which field was missing.
+- Read-only. Use only these IBKR tools: search_contracts, get_price_snapshot,
+  get_option_parameters, get_option_data. Never call a tool that creates, modifies or
+  cancels orders, order instructions, alerts or watchlists.
+- Never invent a number. If a field is missing from a response, write "n/a", leave that
+  ticker out of the ranking, and name the missing field.
 
 Steps:
-1. Universe: the tickers in `CANDIDATES` in `wheel_screener.py`.
-2. For each ticker, read from the IBKR connector: last price; 52-week high and low; the
-   price 52 weeks ago (`open_52w`); current 30-day implied volatility; 52-week IV rank
-   (from IV history if the connector does not report it directly); 30-day historical
-   volatility; average daily option volume. Note the data timestamp.
-3. Save the values to `/tmp/snapshot.json` using the `Candidate` field names.
-4. Score them with the repository's own code, not a re-implementation, for example:
-   `python -c "import json; from wheel_screener import Candidate, score_candidate; ..."`,
-   calling `score_candidate(c, dte=30)` and ranking by `composite_score`.
-5. Final message, at most 12 plain-text lines for a phone notification: data timestamp,
-   then the top 3 as `TICKER price | strike | est. premium | yield/mo | IVR | trend | score`,
-   then one line listing any ticker excluded for missing data.
+1. Find `wheel_screener.py` at the repository root. If it is not in your working directory,
+   run `git clone --depth 1 https://github.com/VinnieCooks/sandbox` and work in that folder.
+2. Universe: the tickers in `CANDIDATES` in `wheel_screener.py`.
+3. For each ticker: call `search_contracts` with the ticker and take the row whose symbol
+   matches exactly and is the US primary listing. Then make one `get_price_snapshot` call
+   with market_data_names: last, misc_statistics, implied_vol_underlying,
+   implied_volatility_percentile, historical_vol, underlying_avg_option_volume, top_status.
+   Response keys use hyphens, e.g. `implied-vol-underlying`.
+4. Map the response to the `Candidate` fields and save the list to `/tmp/snapshot.json`:
+   - price: last
+   - low_52w, high_52w: the 52-week low and high in misc-statistics; open_52w: its price
+     52 weeks ago
+   - annual_iv: implied-vol-underlying (a fraction)
+   - iv_rank_52w: the 52-week value of implied-volatility-percentile (a fraction; the
+     script documents this field as a percentile)
+   - hist_vol_annual: historical-vol
+   - avg_option_vol: underlying-avg-option-volume (calls plus puts, as an integer)
+5. Score with the repository's own code, not a re-implementation: build
+   `Candidate(**row)` for each row, call `score_candidate(c, dte=30)`, and rank by
+   `composite_score`. Its premium is a Black-Scholes estimate from implied volatility,
+   not a market quote.
+6. Reality check for the #1 pick only: with `get_option_parameters`, choose the regular
+   monthly expiration 25 to 45 days out; with `get_option_data` (strikes bounded around
+   the recommended strike), find the put at that strike; read its bid/ask with
+   `get_price_snapshot`. If any step fails, write "quote unavailable" and continue.
+7. Final message, at most 12 plain-text lines for a phone notification:
+   - the data time and whether data was REALTIME or DELAYED (top-status)
+   - the top 3 as `TICKER $price | put $strike | est $premium | yield/mo | IV pct | trend vs 52w ago | score`
+   - the #1 pick's real bid/ask next to the estimate
+   - one line naming any ticker left out, and why
