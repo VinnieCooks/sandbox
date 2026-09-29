@@ -1,0 +1,20 @@
+# Server engine on any Docker host.
+#   cp automation/deploy/.env.example automation/.env   # then fill it in
+#   cd automation/deploy && docker compose up -d --build
+#   docker compose logs -f
+# ops reads secrets from automation/.env inside the mounted repo, so they are not
+# exported into every job's environment.
+services:
+  ops:
+    build:
+      context: ../..
+      dockerfile: automation/deploy/Dockerfile
+      args:
+        INSTALL_CLAUDE: "0"
+    volumes:
+      - ../..:/repo
+      # Private repository? Give the self-update job a read-only deploy key:
+      # - ~/.ssh:/root/.ssh:ro
+    restart: unless-stopped
+    init: true
+    stop_grace_period: 60s

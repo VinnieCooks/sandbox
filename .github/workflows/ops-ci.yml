@@ -1,0 +1,37 @@
+name: ops-ci
+
+on:
+  push:
+    paths:
+      - "automation/**"
+      - ".github/workflows/ops-*.yml"
+  pull_request:
+    paths:
+      - "automation/**"
+      - ".github/workflows/ops-*.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: automation
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            automation/requirements.txt
+            automation/requirements-dev.txt
+      - run: pip install -r requirements.txt -r requirements-dev.txt
+      - name: jobs.yaml is valid and the scheduler workflow is in sync
+        run: python -m ops check
+      - run: python -m pytest -q

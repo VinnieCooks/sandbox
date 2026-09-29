@@ -1,0 +1,23 @@
+# Server engine without Docker (systemd). Assumes the repository is cloned to
+# /opt/ops, a virtualenv at /opt/ops/.venv, and a system user `ops` owning both.
+# Install: sudo cp automation/deploy/ops.service /etc/systemd/system/ \
+#          && sudo systemctl enable --now ops && journalctl -u ops -f
+[Unit]
+Description=ops job scheduler (automation/jobs.yaml)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ops
+WorkingDirectory=/opt/ops/automation
+ExecStart=/opt/ops/.venv/bin/python -m ops serve
+Restart=always
+RestartSec=10
+# SIGTERM goes to the scheduler, which waits for running jobs; anything still
+# alive after TimeoutStopSec is killed.
+KillMode=mixed
+TimeoutStopSec=120
+
+[Install]
+WantedBy=multi-user.target

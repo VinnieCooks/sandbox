@@ -1,0 +1,81 @@
+# jobs.yaml: the single source of truth for scheduled work.
+#
+# After editing, from automation/:  python -m ops sync   (regenerates the GitHub
+# workflow), then commit both files. CI runs `python -m ops check`, which fails
+# if they drift apart.
+#
+# engine
+#   github  GitHub Actions cron. $0 on public repos; 2,000 free min/month on private
+#           (GitHub Free). Minimum every 5 min; starts can be late; max 6 h per run.
+#   server  `python -m ops serve` on an always-on machine (VPS). Minute precision.
+#   Claude Cloud Routines are configured at claude.ai/code/routines; their prompts
+#   live in automation/routines/. A job starts one with `routine: <name>`.
+#
+# notify    always | signal | failure | never
+#   signal = notify only when the job writes a message to the file in $OPS_NOTIFY
+#   (claude jobs: unless Claude replies NOTHING_TO_REPORT). Failures and timeouts
+#   notify under every policy except never.
+
+# Assumption: US market hours are defined in Eastern Time, so schedules default to
+# it. Change this if your jobs follow your own local clock.
+timezone: America/New_York
+
+defaults:
+  cwd: ..            # commands run from the repository root
+  engine: github
+  timeout: 15m
+  notify: signal
+
+jobs:
+  - name: ping
+    description: >-
+      Manual end-to-end test (no schedule). GitHub: Actions > ops-scheduler >
+      Run workflow > job "ping". Locally: python -m ops run ping
+    run: echo "ops can reach you"
+    notify: always
+    timeout: 1m
+
+  - name: heartbeat
+    description: >-
+      Proves the scheduler fires. If HEARTBEAT_URL is set (e.g. a free
+      healthchecks.io check) it pings it, so you are alerted when runs STOP -
+      the one failure a scheduler cannot report about itself.
+    run: python automation/jobs/heartbeat.py
+    schedule: "17 */6 * * *"      # every 6 h at :17 - off the hour, when GitHub's queue is shorter
+    secrets: [HEARTBEAT_URL]
+    notify: failure
+    timeout: 2m
+
+  - name: wheel-screener
+    description: >-
+      Wheel cash-secured-put screener. Disabled: it scores a frozen 2026-07-22
+      snapshot, so every run would print the same answer. Enable once it reads
+      live data (see automation/routines/wheel-screen-live.md).
+    run: python wheel_screener.py
+    schedule: "37 9 * * 1-5"      # weekdays 09:37 ET, seven minutes after the open
+    notify: always
+    enabled: false
+
+  - name: market-brief
+    description: >-
+      Headless Claude run (type: claude). Web tools only: the token these runs use
+      (CLAUDE_CODE_OAUTH_TOKEN) cannot load claude.ai connectors such as IBKR.
+      Does not count against the Cloud Routine daily cap.
+    type: claude
+    prompt_file: automation/prompts/market-brief.md
+    schedule: "7 8 * * 1-5"       # weekdays 08:07 ET, before the open
+    notify: signal
+    allowed_tools: [WebSearch, WebFetch]
+    max_turns: 20
+    timeout: 20m
+    enabled: false
+
+  - name: self-update
+    description: >-
+      Server engine only. Pulls the repository so a push to GitHub reaches the VPS;
+      the server reloads jobs.yaml automatically when it changes.
+    engine: server
+    run: git pull --ff-only --quiet
+    schedule: "*/15 * * * *"
+    notify: failure
+    timeout: 2m
