@@ -47,7 +47,7 @@ work out *what it means*. Routine runs are capped per day, and the checks are no
 | claude.ai connectors (IBKR, Gmail…) | no | no | **yes** | **no**: the token can only make model requests |
 | Daily cap | none | none | Pro 5 · Max 15 · Team/Enterprise 25 runs | none beyond plan usage limits |
 | You maintain | nothing | OS updates, disk, uptime | nothing | nothing |
-| Silent failure mode | public repos: schedule disabled after 60 days without commits; forks start with schedules disabled | machine dies | daily cap hit, routine paused | expired token (1-year life) |
+| Silent failure mode | public repos: schedule disabled after 60 days without repository activity; forks start with schedules disabled | machine dies | daily cap hit, routine paused | expired token (1-year life) |
 
 Pick a VPS only when a job needs one of: under 5-minute cadence, minute-accurate timing,
 runs over 6 h, a long-lived process (e.g. IBKR's IB Gateway for its trading API), a fixed
