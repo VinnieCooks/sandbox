@@ -1,0 +1,56 @@
+# GENERATED from automation/jobs.yaml by `python -m ops sync`. Do not edit by hand.
+# GitHub runs schedules only from the default branch, and only while Actions is enabled.
+name: ops-scheduler
+
+on:
+  schedule:
+    - cron: "17 */6 * * *"  # heartbeat
+      timezone: "America/New_York"
+  workflow_dispatch:
+    inputs:
+      job:
+        description: Job name from automation/jobs.yaml
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ops-scheduler-${{ github.event.schedule || inputs.job }}
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            automation/requirements.txt
+            automation/jobs/requirements.txt
+      - name: Install dependencies
+        run: pip install -r automation/requirements.txt -r automation/jobs/requirements.txt
+      - name: Run jobs
+        working-directory: automation
+        env:
+          PYTHONUNBUFFERED: "1"
+          # Every repository secret is visible to the runner process; each job only
+          # receives the secrets it lists under `secrets:` in jobs.yaml.
+          OPS_SECRETS_JSON: ${{ toJSON(secrets) }}
+          # Job output stays out of the (public) log unless the repo variable OPS_REDACT_LOGS is "0".
+          OPS_REDACT_LOGS: ${{ vars.OPS_REDACT_LOGS || '1' }}
+          OPS_CRON: ${{ github.event.schedule }}
+          OPS_JOB: ${{ inputs.job }}
+        run: |
+          if [ "$GITHUB_EVENT_NAME" = "schedule" ]; then
+            python -m ops run-scheduled --cron "$OPS_CRON"
+          else
+            python -m ops run "$OPS_JOB"
+          fi
